@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05050f">
+<title>Orbit Dodge</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width:100%; height:100%;
+    overflow:hidden;
+    background:#000;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-user-select:none; user-select:none;
+    -webkit-touch-callout:none;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  #app {
+    position:relative;
+    width:100%; height:100%;
+    max-width:480px;
+    margin:0 auto;
+    background:#05050f;
+    overflow:hidden;
+    touch-action: none;
+  }
+  canvas {
+    display:block;
+    width:100%; height:100%;
+    touch-action:none;
+  }
+  #hud {
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:center;
+    padding-top: max(18px, env(safe-area-inset-top));
+    pointer-events:none;
+    z-index:5;
+  }
+  #score {
+    font-size:44px; font-weight:800;
+    color:#fff;
+    text-shadow: 0 0 12px #7df9ff, 0 0 30px #4bd6ff;
+    letter-spacing:1px;
+    transition: transform 0.1s ease;
+  }
+  #score.bump { transform: scale(1.25); }
+  #liveBest {
+    position:absolute; top:0; right:0;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-right:16px;
+    font-size:12px;
+    color:#8fa3c7;
+    letter-spacing:1px;
+    z-index:5;
+  }
+  .overlay {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:14px;
+    background: radial-gradient(circle at 50% 40%, rgba(20,20,45,0.92), rgba(2,2,10,0.97));
+    z-index:10;
+    text-align:center;
+    padding:24px;
+    animation: fadeIn 0.25s ease;
+  }
+  .hidden { display:none !important; }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  h1.title {
+    font-size:40px;
+    font-weight:900;
+    letter-spacing:2px;
+    background: linear-gradient(90deg,#7df9ff,#ff6ec7,#ffd166);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    filter: drop-shadow(0 0 18px rgba(125,249,255,0.35));
+  }
+  .subtitle {
+    color:#a9b8d6;
+    font-size:15px;
+    max-width:300px;
+    line-height:1.5;
+  }
+  .subtitle b { color:#7df9ff; }
+  .bestBox {
+    font-size:14px;
+    color:#ffd166;
+    letter-spacing:0.5px;
+    margin-top:4px;
+  }
+  .bigBtn {
+    margin-top:18px;
+    padding:16px 42px;
+    font-size:18px;
+    font-weight:800;
+    letter-spacing:1px;
+    color:#05050f;
+    background: linear-gradient(135deg,#7df9ff,#4bd6ff);
+    border:none;
+    border-radius:50px;
+    box-shadow: 0 0 25px rgba(125,249,255,0.55), 0 6px 0 #1c8fae;
+    cursor:pointer;
+    transform: translateY(0);
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+  .bigBtn:active {
+    transform: translateY(5px);
+    box-shadow: 0 0 25px rgba(125,249,255,0.55), 0 1px 0 #1c8fae;
+  }
+  #gameOverScreen .bigBtn {
+    background: linear-gradient(135deg,#ff6ec7,#ff4fa6);
+    box-shadow: 0 0 25px rgba(255,110,199,0.55), 0 6px 0 #a3195b;
+  }
+  #gameOverScreen .bigBtn:active {
+    box-shadow: 0 0 25px rgba(255,110,199,0.55), 0 1px 0 #a3195b;
+  }
+  #finalScoreVal {
+    font-size:52px;
+    font-weight:900;
+    color:#fff;
+    text-shadow:0 0 20px #ff6ec7;
+  }
+  #bestScoreVal {
+    font-size:15px;
+    color:#ffd166;
+  }
+  #newBestBadge {
+    font-size:13px;
+    font-weight:800;
+    letter-spacing:1px;
+    color:#05050f;
+    background:#ffd166;
+    padding:5px 14px;
+    border-radius:20px;
+    box-shadow:0 0 16px rgba(255,209,102,0.7);
+    margin-top:-4px;
+  }
+  .hint {
+    position:absolute; bottom:0; left:0; right:0;
+    text-align:center;
+    color:#5a6a8c;
+    font-size:12px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    letter-spacing:0.5px;
+    z-index:5;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud"><div id="score">0</div></div>
+  <div id="liveBest">BEST 0</div>
+  <div class="hint" id="playHint">TAP ANYWHERE TO REVERSE ORBIT</div>
+
+  <div id="startScreen" class="overlay">
+    <h1 class="title">ORBIT DODGE</h1>
+    <p class="subtitle">Tap to <b>reverse</b> your orbit direction.<br>Dodge incoming asteroids. Graze them close for bonus points.</p>
+    <div class="bestBox" id="startHighScore">BEST: 0</div>
+    <button class="bigBtn" id="startBtn">TAP TO PLAY</button>
+  </div>
+
+  <div id="gameOverScreen" class="overlay hidden">
+    <div style="font-size:14px;color:#ff9ecb;letter-spacing:2px;font-weight:700;">GAME OVER</div>
+    <div id="finalScoreVal">0</div>
+    <div id="bestScoreVal">BEST: 0</div>
+    <div id="newBestBadge" class="hidden">★ NEW BEST ★</div>
+    <button class="bigBtn" id="restartBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---------- Prevent mobile gesture interference ----------
+  document.addEventListener('touchmove', function(e){ e.preventDefault(); }, {passive:false});
+  document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+  document.addEventListener('dblclick', function(e){ e.preventDefault(); });
+
+  // ---------- Setup ----------
+  const app = document.getElementById('app');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const liveBestEl = document.getElementById('liveBest');
+  const startScreen = document.getElementById('startScreen');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const startHighScoreEl = document.getElementById('startHighScore');
+  const finalScoreVal = document.getElementById('finalScoreVal');
+  const bestScoreVal = document.getElementById('bestScoreVal');
+  const newBestBadge = document.getElementById('newBestBadge');
+  const playHint = document.getElementById('playHint');
+
+  const HS_KEY = 'orbitDodge_highScore';
+  let highScore = parseInt(localStorage.getItem(HS_KEY) || '0', 10);
+
+  let W = 0, H = 0, DPR = 1;
+  let cx = 0, cy = 0; // center of canvas (sun position)
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+    W = app.clientWidth;
+    H = app.clientHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    cx = W/2; cy = H/2;
+    orbitRadius = Math.min(W,H) * 0.30;
+    spawnDist = Math.hypot(W,H)/2 + 50;
+  }
+
+  // ---------- Game State ----------
+  const STATE = { MENU:'menu', PLAYING:'playing', GAMEOVER:'gameover' };
+  let state = STATE.MENU;
+
+  let orbitRadius = 100;
+  let spawnDist = 400;
+
+  let score = 0;
+  let elapsed = 0;         // seconds survived, drives difficulty
+  let spawnTimer = 0;
+  let shakeMag = 0;
+  let lastTime = 0;
+
+  const player = {
+    angle: -Math.PI/2,
+    direction: 1,     // 1 = clockwise, -1 = counter-clockwise
+    radius: 10,
+    x: 0, y: 0
+  };
+
+  let asteroids = [];
+  let particles = [];
+  let trail = [];
+  let floaters = [];   // floating score text
+  let stars = [];
+
+  // ---------- Difficulty scaling ----------
+  function getSpawnInterval(){ return Math.max(260, 1250 - score*16 - elapsed*6); }
+  function getAsteroidSpeed(){ return Math.min(600, 140 + score*4.2 + elapsed*3); }
+  function getAngularSpeed(){ return Math.min(3.6, 1.85 + score*0.018); }
+  function getAsteroidRadiusRange(){
+    const variance = Math.min(16, 3 + score*0.35);
+    return { min: 7, max: 7 + variance };
+  }
+  function bigAsteroidChance(){ return Math.min(0.22, score*0.006); }
+
+  // ---------- Stars background ----------
+  function makeStars(){
+    stars = [];
+    const count = 90;
+    for(let i=0;i<count;i++){
+      stars.push({
+        x: Math.random()*W, y: Math.random()*H,
+        r: Math.random()*1.4+0.3,
+        tw: Math.random()*Math.PI*2,
+        speed: Math.random()*1.2+0.4
+      });
+    }
+  }
+
+  // ---------- Init / Reset ----------
+  function resetGame(){
+    score = 0;
+    elapsed = 0;
+    spawnTimer = 0;
+    shakeMag = 0;
+    asteroids = [];
+    particles = [];
+    trail = [];
+    floaters = [];
+    player.angle = -Math.PI/2;
+    player.direction = 1;
+    updateScoreUI(true);
+  }
+
+  function updateScoreUI(bump){
+    scoreEl.textContent = score;
+    if(bump){
+      scoreEl.classList.remove('bump');
+      void scoreEl.offsetWidth;
+      scoreEl.classList.add('bump');
+    }
+  }
+
+  // ---------- Input ----------
+  function reverseDirection(x, y){
+    player.direction *= -1;
+    spawnBurst(player.x, player.y, '#7df9ff', 8, 2.2);
+    if(navigator.vibrate) navigator.vibrate(8);
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    if(state === STATE.PLAYING){
+      reverseDirection();
+    }
+  });
+
+  startBtn.addEventListener('click', function(){
+    startScreen.classList.add('hidden');
+    playHint.classList.remove('hidden');
+    resetGame();
+    state = STATE.PLAYING;
+  });
+
+  restartBtn.addEventListener('click', function(){
+    gameOverScreen.classList.add('hidden');
+    playHint.classList.remove('hidden');
+    resetGame();
+    state = STATE.PLAYING;
+  });
+
+  // ---------- Asteroids ----------
+  function spawnAsteroid(){
+    const theta = Math.random()*Math.PI*2;
+    const sx = cx + Math.cos(theta)*spawnDist;
+    const sy = cy + Math.sin(theta)*spawnDist;
+    const speed = getAsteroidSpeed() * (0.85 + Math.random()*0.3);
+    const dirX = (cx - sx)/spawnDist;
+    const dirY = (cy - sy)/spawnDist;
+
+    const range = getAsteroidRadiusRange();
+    let radius = range.min + Math.random()*(range.max-range.min);
+    if(Math.random() < bigAsteroidChance()){
+      radius *= 1.6; // occasional big rock
+    }
+
+    asteroids.push({
+      x: sx, y: sy,
+      vx: dirX*speed, vy: dirY*speed,
+      radius: radius,
+      spawnDist: spawnDist,
+      rot: Math.random()*Math.PI*2,
+      rotSpeed: (Math.random()-0.5)*3,
+      prevDist: spawnDist,
+      trend: 'far', // 'approaching' or 'receding'
+      nearMissAwarded: false,
+      hue: 20 + Math.random()*20
+    });
+  }
+
+  function distTo(ax, ay, bx, by){
+    return Math.hypot(ax-bx, ay-by);
+  }
+
+  // ---------- Particles ----------
+  function spawnBurst(x, y, color, count, speedMul){
+    for(let i=0;i<count;i++){
+      const a = Math.random()*Math.PI*2;
+      const spd = (Math.random()*2.2+0.8) * (speedMul||1);
+      particles.push({
+        x, y,
+        vx: Math.cos(a)*spd, vy: Math.sin(a)*spd,
+        life: 1, decay: Math.random()*0.02+0.02,
+        size: Math.random()*3+1.5,
+        color
+      });
+    }
+  }
+
+  function spawnFloater(x, y, text, color){
+    floaters.push({ x, y, text, color, life:1, vy:-38 });
+  }
+
+  // ---------- Update ----------
+  function update(dt){
+    if(state !== STATE.PLAYING) { updateAmbient(dt); return; }
+
+    elapsed += dt;
+
+    // player orbit
+    player.angle += player.direction * getAngularSpeed() * dt;
+    player.x = cx + Math.cos(player.angle)*orbitRadius;
+    player.y = cy + Math.sin(player.angle)*orbitRadius;
+
+    // trail
+    trail.push({x:player.x, y:player.y, life:1});
+    if(trail.length > 26) trail.shift();
+    trail.forEach(t => t.life -= dt*2.2);
+    trail = trail.filter(t => t.life > 0);
+
+    // spawn asteroids
+    spawnTimer += dt*1000;
+    if(spawnTimer >= getSpawnInterval()){
+      spawnTimer = 0;
+      spawnAsteroid();
+    }
+
+    // update asteroids
+    for(let i = asteroids.length-1; i >= 0; i--){
+      const a = asteroids[i];
+      a.x += a.vx*dt;
+      a.y += a.vy*dt;
+      a.rot += a.rotSpeed*dt;
+
+      const dCenter = distTo(a.x,a.y,cx,cy);
+      const dPlayer = distTo(a.x,a.y,player.x,player.y);
+
+      // collision check
+      if(dPlayer < a.radius + player.radius - 1){
+        triggerGameOver(a);
+        return;
+      }
+
+      // near-miss trend tracking (detect local minimum distance to player)
+      const nearMissThreshold = player.radius + a.radius + 16;
+      const newTrend = dPlayer < a.prevDist ? 'approaching' : 'receding';
+      if(a.trend === 'approaching' && newTrend === 'receding' && !a.nearMissAwarded){
+        if(a.prevDist < nearMissThreshold){
+          a.nearMissAwarded = true;
+          score += 3;
+          updateScoreUI(true);
+          spawnFloater(a.x, a.y, '+3', '#ffd166');
+          spawnBurst(a.x, a.y, '#ffd166', 16, 2.6);
+          if(navigator.vibrate) navigator.vibrate([6,20,6]);
+        }
+      }
+      a.trend = newTrend;
+      a.prevDist = dPlayer;
+
+      // exit condition: asteroid has passed through center and traveled back out
+      if(dCenter > a.spawnDist){
+        score += 1;
+        updateScoreUI(true);
+        asteroids.splice(i,1);
+      }
+    }
+
+    updateAmbient(dt);
+  }
+
+  function updateAmbient(dt){
+    // particles
+    for(let i = particles.length-1; i>=0; i--){
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.life -= p.decay;
+      if(p.life <= 0) particles.splice(i,1);
+    }
+    // floating texts
+    for(let i = floaters.length-1; i>=0; i--){
+      const f = floaters[i];
+      f.y += f.vy*dt;
+      f.life -= dt*1.1;
+      if(f.life <= 0) floaters.splice(i,1);
+    }
+    // shake decay
+    if(shakeMag > 0){
+      shakeMag *= 0.88;
+      if(shakeMag < 0.05) shakeMag = 0;
+    }
+    // stars twinkle
+    stars.forEach(s => s.tw += dt*s.speed);
+  }
+
+  function triggerGameOver(asteroid){
+    spawnBurst(player.x, player.y, '#ff6ec7', 34, 3.2);
+    spawnBurst(player.x, player.y, '#7df9ff', 20, 2.4);
+    shakeMag = 18;
+    if(navigator.vibrate) navigator.vibrate([30,40,30]);
+    state = STATE.GAMEOVER;
+    playHint.classList.add('hidden');
+
+    if(score > highScore){
+      highScore = score;
+      localStorage.setItem(HS_KEY, String(highScore));
+      newBestBadge.classList.remove('hidden');
+    } else {
+      newBestBadge.classList.add('hidden');
+    }
+
+    finalScoreVal.textContent = score;
+    bestScoreVal.textContent = 'BEST: ' + highScore;
+    liveBestEl.textContent = 'BEST ' + highScore;
+
+    setTimeout(function(){
+      gameOverScreen.classList.remove('hidden');
+    }, 380); // brief delay so the explosion is seen first
+  }
+
+  // ---------- Draw ----------
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    ctx.save();
+    if(shakeMag > 0){
+      ctx.translate((Math.random()-0.5)*shakeMag, (Math.random()-0.5)*shakeMag);
+    }
+
+    // background
+    const bg = ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(W,H)*0.75);
+    bg.addColorStop(0, '#0b0c22');
+    bg.addColorStop(1, '#020208');
+    ctx.fillStyle = bg;
+    ctx.fillRect(-20,-20,W+40,H+40);
+
+    // stars
+    stars.forEach(s=>{
+      const tw = 0.5 + Math.sin(s.tw)*0.5;
+      ctx.globalAlpha = 0.3 + tw*0.5;
+      ctx.fillStyle = '#cfe6ff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // orbit path guide
+    ctx.strokeStyle = 'rgba(125,249,255,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4,7]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, orbitRadius, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // sun glow
+    const sunR = Math.min(W,H)*0.09;
+    const glow = ctx.createRadialGradient(cx,cy,0,cx,cy,sunR*3.2);
+    glow.addColorStop(0,'rgba(255,209,102,0.55)');
+    glow.addColorStop(1,'rgba(255,209,102,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx,cy,sunR*3.2,0,Math.PI*2);
+    ctx.fill();
+
+    const sunGrad = ctx.createRadialGradient(cx-sunR*0.3,cy-sunR*0.3,sunR*0.1,cx,cy,sunR);
+    sunGrad.addColorStop(0,'#fff6d8');
+    sunGrad.addColorStop(0.5,'#ffd166');
+    sunGrad.addColorStop(1,'#ff9e2c');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath();
+    ctx.arc(cx,cy,sunR,0,Math.PI*2);
+    ctx.fill();
+
+    // asteroids
+    asteroids.forEach(a=>{
+      ctx.save();
+      ctx.translate(a.x,a.y);
+      ctx.rotate(a.rot);
+      const g = ctx.createRadialGradient(-a.radius*0.3,-a.radius*0.3,a.radius*0.1,0,0,a.radius);
+      g.addColorStop(0, `hsl(${a.hue},40%,60%)`);
+      g.addColorStop(1, `hsl(${a.hue-10},30%,28%)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      const spikes = 7;
+      for(let i=0;i<spikes;i++){
+        const ang = (i/spikes)*Math.PI*2;
+        const rr = a.radius * (0.8 + (i%2===0?0.2:0));
+        const px = Math.cos(ang)*rr, py = Math.sin(ang)*rr;
+        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // player trail
+    trail.forEach((t,i)=>{
+      ctx.globalAlpha = Math.max(0,t.life) * 0.5;
+      ctx.fillStyle = '#7df9ff';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, player.radius*0.55*t.life, 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // player
+    if(state === STATE.PLAYING || state === STATE.GAMEOVER){
+      const pGlow = ctx.createRadialGradient(player.x,player.y,0,player.x,player.y,player.radius*3.5);
+      pGlow.addColorStop(0,'rgba(125,249,255,0.65)');
+      pGlow.addColorStop(1,'rgba(125,249,255,0)');
+      ctx.fillStyle = pGlow;
+      ctx.beginPath();
+      ctx.arc(player.x,player.y,player.radius*3.5,0,Math.PI*2);
+      ctx.fill();
+
+      const pGrad = ctx.createRadialGradient(player.x-3,player.y-3,1,player.x,player.y,player.radius);
+      pGrad.addColorStop(0,'#e8ffff');
+      pGrad.addColorStop(1,'#39c6ff');
+      ctx.fillStyle = pGrad;
+      ctx.beginPath();
+      ctx.arc(player.x,player.y,player.radius,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // particles
+    particles.forEach(p=>{
+      ctx.globalAlpha = Math.max(0,p.life);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // floating texts
+    floaters.forEach(f=>{
+      ctx.globalAlpha = Math.max(0,f.life);
+      ctx.fillStyle = f.color;
+      ctx.font = '700 20px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = f.color;
+      ctx.shadowBlur = 12;
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.shadowBlur = 0;
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  // ---------- Main Loop ----------
+  function loop(ts){
+    if(!lastTime) lastTime = ts;
+    let dt = (ts - lastTime)/1000;
+    lastTime = ts;
+    dt = Math.min(dt, 0.033); // clamp for tab-switch / stutter safety
+
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Boot ----------
+  function boot(){
+    resize();
+    makeStars();
+    player.x = cx + Math.cos(player.angle)*orbitRadius;
+    player.y = cy + Math.sin(player.angle)*orbitRadius;
+    startHighScoreEl.textContent = 'BEST: ' + highScore;
+    liveBestEl.textContent = 'BEST ' + highScore;
+    playHint.classList.add('hidden');
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+
+  boot();
+})();
+</script>
+</body>
+</html>
